@@ -1,6 +1,6 @@
-# The Card Room
+# Card Table
 
-A live, private card table for up to four friends. Choose a standard deck (0–2 jokers) or a 57-card Rook deck, share a four-letter code, and play using your own rules. No accounts, enforced turns, or scoring system.
+A live, private card table for up to four friends. Choose a standard deck (0–2 jokers), a 57-card Rook deck, or the **500 Deck**: Rook without the 1s, 2s, and 3s (45 cards, including the Rook bird). Share a four-letter code and play using your own rules. No accounts, enforced turns, or scoring system.
 
 ## Run locally
 
@@ -57,7 +57,9 @@ The Node server persists room state in ignored JSON files and needs no external 
 - Clicking a facedown stack selects its top card. **Select top N** selects several without revealing their values. Card counts are visible on both desktop and touch devices.
 - You can give cards to any hand. You can take cards from your own hand, shared piles, or a vacant seat's hand. An occupied or reconnecting player's hand stays protected.
 - Hosts can shuffle the Deck, return all cards with confirmation, add/configure piles, and delete empty piles. Returning cards leaves all collections in place and does **not** shuffle.
+- **Table Activity** is available only to the host. Everyone still sees the latest table action in the footer.
 - **Deal cards** always deals from the Deck, one card at a time in player-number order, starting with the selected seat. Choose a base count per occupied player and check any players who should receive one extra. Insufficient deals fail without moving cards. Reconnecting seats count as occupied.
+- With the **500 Deck**, the host also gets **Deal for 500**: 10 private cards to each of the four players and 5 face-down cards to **Middle**. This requires four occupied seats and all 45 cards in the Deck. Middle is created if needed; an existing pile named Middle (case-insensitive) is reused in place and set face down. To deal another round, return all cards to the Deck, optionally shuffle, and use Deal for 500 again. An invalid deal changes nothing.
 - Pile visibility applies to all cards in the pile. Faceup piles expose values to everyone; facedown piles hide them. Hands always remain private. Players manage game rules and scoring themselves.
 - Hosts drag piles between grid cells or use each pile's **↔** button on touch/keyboard. Occupied cells swap, so collections cannot overlap. Card lists scroll internally. There is a practical limit of 60 shared collections, including the Deck; pile names allow 32 characters.
 - On desktop, the next numbered seat is to your left, followed by the top and right. Seat numbers remain fixed when players leave. Compact screens place these same three seats in a row above the table; your hand stays below it.
@@ -69,7 +71,7 @@ The Node server persists room state in ignored JSON files and needs no external 
 macOS/Linux:
 
 ```sh
-npm test              # 13 game/coordinator tests, including privacy and concurrent moves
+npm test              # game/coordinator tests, including privacy and concurrent moves
 npm run check         # JavaScript syntax checks
 npm run build         # Cloudflare bundle validation; does not publish
 npm run test:browser  # four-player Chromium test using an isolated Node server
@@ -125,7 +127,7 @@ Remove-Item Env:CARDS_TEST_URL -ErrorAction SilentlyContinue
 
 Install Playwright's Chromium first using the command above. Stop the Cloudflare runtime with **Ctrl+C** in its terminal when finished.
 
-The browser suite covers both deck types, four seats, full-table rejection, extra-card dealing, visible/hidden hands, card transfers, pile configuration and shared positioning, refresh recovery, seat replacement, return/shuffle, host transfer, closure, and phone layouts. The game tests also check two-minute expiration and simultaneous attempts to move the same card.
+The browser suite covers all three deck types, four seats, full-table rejection, extra-card dealing, the 500 deal and Middle pile, host-only activity access, visible/hidden hands, card transfers, pile configuration and shared positioning, refresh recovery, seat replacement, return/shuffle, host transfer, closure, and phone layouts. The game tests also check two-minute expiration, simultaneous attempts to move the same card, and invalid 500 deals leaving the table unchanged.
 
 ## Free-tier deployment on Cloudflare
 

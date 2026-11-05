@@ -351,8 +351,15 @@ select {
   letter-spacing: 1.4px;
 }
 .deck-options {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+.deck-option:last-child {
+  grid-column: 1 / -1;
+}
+.deck-option:last-child small {
+  max-width: none;
 }
 .deck-option {
   display: flex;
@@ -419,6 +426,12 @@ select {
   color: #4d4e28;
   border-color: #bfa356;
   transform: rotate(6deg);
+}
+.five-hundred-mini {
+  background: var(--green);
+  color: var(--paper);
+  border-color: var(--green-dark);
+  transform: rotate(-6deg);
 }
 .face-mini {
   transform: rotate(-6deg);
@@ -1523,7 +1536,7 @@ body:has(.selection-inner) #toast {
     padding: 22px 20px;
   }
   .deck-options {
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr);
   }
   .deck-option {
     padding: 10px 14px;
@@ -1733,7 +1746,7 @@ body:has(.selection-inner) #toast {
     margin-bottom: 24px;
   }
   .deck-options {
-    flex-direction: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .deck-option {
     padding: 13px 10px;

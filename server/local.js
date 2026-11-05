@@ -183,5 +183,5 @@ server.on("upgrade", async (req, socket, head) => {
   });
 });
 server.listen(port, "0.0.0.0", () =>
-  console.log(`Cards Together is listening on port ${port}.`),
+  console.log(`Card Table is listening on port ${port}.`),
 );

@@ -35,8 +35,113 @@ test("deck composition and unambiguous four-letter codes", () => {
   assert.equal(rook.length, 57);
   assert.equal(rook.filter((c) => c.suit === "rook").length, 1);
   assert.equal(rook.filter((c) => c.color === "yellow").length, 14);
+  const fiveHundred = makeDeck("500", 0);
+  assert.equal(fiveHundred.length, 45);
+  assert.equal(fiveHundred.filter((c) => c.suit === "rook").length, 1);
+  assert.ok(fiveHundred.every((c) => !["1", "2", "3"].includes(c.rank)));
+  for (const color of ["red", "green", "yellow", "black"])
+    assert.deepEqual(
+      fiveHundred.filter((c) => c.suit === color).map((c) => c.rank),
+      Array.from({ length: 11 }, (_, i) => String(i + 4)),
+    );
   for (let i = 0; i < 100; i++) assert.match(makeCode(), /^[A-HJ-NP-Z]{4}$/);
   assert.throws(() => makeDeck("standard", 3));
+});
+test("Deal for 500 gives four private hands of ten and creates a hidden Middle of five", () => {
+  const { state, host, tokens } = setup(4, "500");
+  const before = [...state.collections[0].cards];
+  act(state, host, { type: "deal500" });
+  const hands = state.collections.filter((c) => c.type === "hand");
+  const middle = state.collections.find((c) => c.name === "Middle");
+  assert.deepEqual(
+    hands.map((c) => c.cards.length),
+    [10, 10, 10, 10],
+  );
+  assert.equal(state.collections[0].cards.length, 0);
+  assert.equal(middle.cards.length, 5);
+  assert.equal(middle.faceUp, false);
+  assert.equal(middle.type, "pile");
+  assert.equal(hands[0].cards[0].id, before.at(-1).id);
+  assert.equal(hands[1].cards[0].id, before.at(-2).id);
+  assert.equal(new Set(cardsIn(state).map((c) => c.id)).size, 45);
+  for (const token of tokens) {
+    const view = viewFor(state, token);
+    for (const hand of view.collections.filter((c) => c.type === "hand"))
+      assert.ok(
+        hand.cards.every((c) => (hand.seat === view.seat ? !!c.rank : !c.rank)),
+      );
+    assert.ok(
+      view.collections
+        .find((c) => c.id === middle.id)
+        .cards.every((c) => !c.rank && !c.suit && !c.color),
+    );
+  }
+  const snapshot = JSON.stringify(state);
+  assert.throws(() => act(state, host, { type: "deal500" }), /Return all 45/);
+  assert.equal(JSON.stringify(state), snapshot);
+});
+test("Deal for 500 reuses Middle, retains its position, and restores face-down visibility on every deal", () => {
+  const { state, host } = setup(4, "500");
+  act(state, host, { type: "createPile" });
+  act(state, host, {
+    type: "editPile",
+    id: "pile-1",
+    name: "middle",
+    faceUp: true,
+  });
+  act(state, host, { type: "position", id: "pile-1", position: 3 });
+  for (let round = 0; round < 2; round++) {
+    act(state, host, { type: "deal500" });
+    assert.equal(state.collections.length, 6);
+    const middle = state.collections.find((c) => c.id === "pile-1");
+    assert.equal(middle.position, 3);
+    assert.equal(middle.faceUp, false);
+    assert.equal(middle.cards.length, 5);
+    assert.equal(state.nextPile, 2);
+    act(state, host, { type: "return" });
+    act(state, host, {
+      type: "editPile",
+      id: "pile-1",
+      name: "middle",
+      faceUp: true,
+    });
+  }
+});
+test("Deal for 500 rejects non-hosts, other decks, missing players, and incomplete Decks without changing the table", () => {
+  const cases = [
+    setup(4, "500"),
+    setup(4, "rook"),
+    setup(4),
+    setup(3, "500"),
+    setup(4, "500"),
+  ];
+  act(cases[4].state, cases[4].host, {
+    type: "move",
+    cards: ref(cases[4].state, "deck"),
+    target: "hand-1",
+  });
+  const errors = [
+    /host/,
+    /500 Deck/,
+    /500 Deck/,
+    /four occupied/,
+    /Return all 45/,
+  ];
+  cases.forEach(({ state, tokens, host }, i) => {
+    const before = JSON.stringify(state);
+    assert.throws(
+      () => act(state, i === 0 ? tokens[1] : host, { type: "deal500" }),
+      errors[i],
+    );
+    assert.equal(JSON.stringify(state), before);
+  });
+});
+test("Deal for 500 fails atomically if there is no room to create Middle", () => {
+  const { state, host } = setup(4, "500");
+  for (let i = 0; i < 59; i++) act(state, host, { type: "createPile" });
+  const before = JSON.stringify(state);
+  assert.throws(() => act(state, host, { type: "deal500" }), /60-pile limit/);
+  assert.equal(JSON.stringify(state), before);
 });
 test("initial hands, seat order, full rooms, and private serialization", () => {
   const { state, tokens } = setup();

@@ -62,6 +62,8 @@ try {
   await mkdir("test-results", { recursive: true });
   const host = await page();
   await host.goto(base);
+  await expect(host).toHaveTitle("Card Table · A table for everyone");
+  await expect(host.locator(".brand")).toContainText("Card Table");
   await expect(
     host.getByRole("heading", { name: "A good hand. Even better company." }),
   ).toBeVisible();
@@ -77,6 +79,7 @@ try {
     .textContent()
     .then((v) => v.slice(0, 4));
   await expect(host.locator(".table-toolbar p")).toContainText("54 cards");
+  await expect(host.locator('[data-action="deal-500"]')).toHaveCount(0);
   const guest = await page(),
     third = await page(),
     fourth = await page();
@@ -84,6 +87,16 @@ try {
   await join(third, code);
   await join(fourth, code);
   await expect(host.locator(".table-toolbar p")).toContainText("4 of 4 seats");
+  await expect(
+    host.getByRole("button", { name: "Table Activity" }),
+  ).toBeVisible();
+  await expect(guest.locator('[data-action="activity"]')).toHaveCount(0);
+  await expect(third.locator('[data-action="activity"]')).toHaveCount(0);
+  await expect(fourth.locator('[data-action="activity"]')).toHaveCount(0);
+  await host.getByRole("button", { name: "Table Activity" }).click();
+  await expect(host.locator("#dialog .eyebrow")).toHaveText("CARD TABLE");
+  await expect(host.locator(".activity-list li")).not.toHaveCount(0);
+  await host.getByRole("button", { name: "Got it" }).click();
   const full = await host.request.post(`${base}/api/rooms/${code}/join`, {
     headers: { Origin: base },
     data: {},
@@ -200,6 +213,10 @@ try {
   await host.locator("#next-host").selectOption("3");
   await host.locator('#exit-form button[type="submit"]').click();
   await expect(third.locator(".host-pill")).toBeVisible();
+  await expect(
+    third.getByRole("button", { name: "Table Activity" }),
+  ).toBeVisible();
+  await expect(replacement.locator('[data-action="activity"]')).toHaveCount(0);
   await third
     .getByRole("button", { name: "Leave table", exact: false })
     .click();
@@ -212,9 +229,85 @@ try {
   await mobile.getByRole("button", { name: "Create a game" }).click();
   await ready(mobile);
   await expect(mobile.locator(".table-toolbar p")).toContainText("57 cards");
+  await expect(mobile.locator('[data-action="deal-500"]')).toHaveCount(0);
+  // The 500 shortcut requires four seats, preserves private hands, and reuses Middle.
+  await host.getByRole("button", { name: /500 Deck/ }).click();
+  await expect(host.locator(".joker-row")).toBeHidden();
+  await host.getByRole("button", { name: "Create a game" }).click();
+  await ready(host);
+  await expect(host.locator(".table-toolbar p")).toContainText(
+    "500 Deck · 45 cards",
+  );
+  const fiveHundredCode = (
+    await host.locator(".room-badge button").textContent()
+  ).slice(0, 4);
+  await host.getByRole("button", { name: "Deal for 500", exact: true }).click();
+  await expect(host.locator("#toast")).toContainText("four occupied seats");
+  await expect(host.locator('[data-pile="deck"] .stack-count')).toHaveText(
+    "45",
+  );
+  await expect(host.locator('[data-pile="pile-1"]')).toHaveCount(0);
+  await join(guest, fiveHundredCode);
+  await join(third, fiveHundredCode);
+  await join(fourth, fiveHundredCode);
+  await expect(guest.locator('[data-action="deal-500"]')).toHaveCount(0);
+  await host.getByRole("button", { name: "Deal for 500", exact: true }).click();
+  for (const player of [host, guest, third, fourth]) {
+    await handCount(player, 10);
+    await expect(player.locator('[data-pile="pile-1"] h3')).toContainText(
+      "Middle",
+    );
+    await expect(
+      player.locator('[data-pile="pile-1"] .stack-count'),
+    ).toHaveText("5");
+    await expect(
+      player.locator('[data-pile="pile-1"] .playing-card'),
+    ).toHaveCount(0);
+    await expect(
+      player.locator(".hand:not(.own-hand) .playing-card"),
+    ).toHaveCount(0);
+    await expect(
+      player.locator('[data-pile="deck"] .empty-pile'),
+    ).toBeVisible();
+  }
+  await host
+    .getByRole("button", { name: "Return all cards to Deck", exact: true })
+    .click();
+  await host.locator('#return-form button[type="submit"]').click();
+  await handCount(host, 0);
+  await host.getByRole("button", { name: "Configure Middle" }).click();
+  await host.locator('[name="faceUp"]').check();
+  await host.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(host.locator('[data-pile="pile-1"] .pile-footer')).toContainText(
+    "Face up",
+  );
+  await host.getByRole("button", { name: "Deal for 500", exact: true }).click();
+  await handCount(host, 10);
+  await expect(host.locator('[data-pile="pile-1"] .pile-footer')).toContainText(
+    "Face down",
+  );
+  await expect(host.locator('[data-pile="pile-1"] .stack-count')).toHaveText(
+    "5",
+  );
+  await expect(host.locator("[data-pile]")).toHaveCount(2);
+  await host.screenshot({
+    path: "test-results/500-desktop.png",
+    fullPage: true,
+  });
+  await host.setViewportSize({ width: 390, height: 844 });
+  await host.screenshot({
+    path: "test-results/500-mobile.png",
+    fullPage: true,
+  });
+  assert.ok(
+    await host.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+    "500 host mobile overflow",
+  );
   assert.deepEqual(errors, [], `Browser exceptions: ${errors.join(", ")}`);
   console.log(
-    "PASS: four-player join, capacity, extra-card deal, privacy, refresh, piles, card moves, layout sync, mobile layouts, replacement seats, return, shuffle, host transfer, closure, and Rook.",
+    "PASS: Card Table branding, three deck types, four-player join, capacity, extra-card deal, private hands, 500 deals and Middle reuse, host-only activity, refresh, piles, card moves, layout sync, mobile layouts, replacement seats, return, shuffle, host transfer, and closure.",
   );
 } finally {
   await browser?.close();

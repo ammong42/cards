@@ -31,9 +31,10 @@ export function makeDeck(kind, jokers) {
   const cards = [];
   const add = (rank, suit, color) =>
     cards.push({ id: crypto.randomUUID(), rank, suit, color });
-  if (kind === "rook") {
+  if (kind === "rook" || kind === "500") {
     for (const color of ["red", "green", "yellow", "black"]) {
-      for (let rank = 1; rank <= 14; rank++) add(String(rank), color, color);
+      for (let rank = kind === "500" ? 4 : 1; rank <= 14; rank++)
+        add(String(rank), color, color);
     }
     add("R", "rook", "black");
   } else if (kind === "standard" && integer(jokers, 0, 2)) {
@@ -117,6 +118,23 @@ export const canTake = (state, seat, c) =>
   c.type !== "hand" || c.seat === seat || !state.players[c.seat - 1].token;
 function record(state, text) {
   state.events = [...state.events.slice(-14), text];
+}
+function createPile(state, name) {
+  if (state.collections.filter((c) => c.type !== "hand").length >= 60)
+    fail("This table has reached its 60-pile limit.");
+  let position = 0;
+  while (state.collections.some((c) => c.position === position)) position++;
+  const n = state.nextPile++;
+  const pile = {
+    id: `pile-${n}`,
+    name: name ?? `Pile ${n}`,
+    type: "pile",
+    faceUp: false,
+    position,
+    cards: [],
+  };
+  state.collections.push(pile);
+  return pile;
 }
 export function closeGame(state) {
   state.closed = true;
@@ -271,22 +289,34 @@ export function act(state, token, action) {
       record(state, `The host dealt ${total} cards from the Deck.`);
       break;
     }
+    case "deal500": {
+      hostOnly();
+      if (state.kind !== "500") fail("Deal for 500 requires a 500 Deck.");
+      if (occupied(state).length !== 4)
+        fail(
+          "Deal for 500 needs four occupied seats. Invite the other players first.",
+        );
+      if (deck.cards.length !== 45)
+        fail("Return all 45 cards to the Deck before using Deal for 500.");
+      const middle =
+        state.collections.find(
+          (c) => c.type === "pile" && c.name.trim().toLowerCase() === "middle",
+        ) ?? createPile(state, "Middle");
+      middle.faceUp = false;
+      for (let round = 0; round < 10; round++)
+        for (let seat = 1; seat <= 4; seat++)
+          collectionFor(state, `hand-${seat}`).cards.push(deck.cards.pop());
+      for (let i = 0; i < 5; i++) middle.cards.push(deck.cards.pop());
+      record(
+        state,
+        "The host dealt for 500: 10 cards per player and 5 face down to Middle.",
+      );
+      break;
+    }
     case "createPile": {
       hostOnly();
-      if (state.collections.filter((c) => c.type !== "hand").length >= 60)
-        fail("This table has reached its 60-pile limit.");
-      let position = 0;
-      while (state.collections.some((c) => c.position === position)) position++;
-      const n = state.nextPile++;
-      state.collections.push({
-        id: `pile-${n}`,
-        name: `Pile ${n}`,
-        type: "pile",
-        faceUp: false,
-        position,
-        cards: [],
-      });
-      record(state, `The host created Pile ${n}.`);
+      const pile = createPile(state);
+      record(state, `The host created ${pile.name}.`);
       break;
     }
     case "editPile": {

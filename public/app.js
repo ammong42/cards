@@ -41,7 +41,7 @@ function persist() {
   }
 }
 function brand() {
-  return '<a class="brand" href="/" data-action="home"><span class="brand-mark">♣</span><span>the card room<span class="brand-dot">.</span></span></a>';
+  return '<a class="brand" href="/" data-action="home"><span class="brand-mark">♣</span><span>Card Table<span class="brand-dot">.</span></span></a>';
 }
 function renderHome() {
   app.innerHTML = `
@@ -68,8 +68,9 @@ function renderHome() {
           <div class="deck-options">
             <button type="button" class="deck-option ${chosenDeck === "standard" ? "active" : ""}" data-action="choose-deck" data-kind="standard" aria-pressed="${chosenDeck === "standard"}"><span class="deck-mini face-mini">A<span>♠</span></span><span><strong>Face cards</strong><small>The familiar favorite · 52 cards</small></span><span class="radio-dot"></span></button>
             <button type="button" class="deck-option ${chosenDeck === "rook" ? "active" : ""}" data-action="choose-deck" data-kind="rook" aria-pressed="${chosenDeck === "rook"}"><span class="deck-mini rook-mini">R<span>♜</span></span><span><strong>Rook cards</strong><small>A colorful classic · 57 cards</small></span><span class="radio-dot"></span></button>
+            <button type="button" class="deck-option ${chosenDeck === "500" ? "active" : ""}" data-action="choose-deck" data-kind="500" aria-pressed="${chosenDeck === "500"}"><span class="deck-mini five-hundred-mini">5<span>●</span></span><span><strong>500 Deck</strong><small>Rook without 1s, 2s, or 3s · 45 cards</small></span><span class="radio-dot"></span></button>
           </div>
-          <div class="joker-row" ${chosenDeck === "rook" ? "hidden" : ""}><label for="jokers">A little wild?</label><select id="jokers" name="jokers"><option value="0">No jokers</option><option value="1">1 joker</option><option value="2">2 jokers</option></select></div>
+          <div class="joker-row" ${chosenDeck !== "standard" ? "hidden" : ""}><label for="jokers">A little wild?</label><select id="jokers" name="jokers"><option value="0">No jokers</option><option value="1">1 joker</option><option value="2">2 jokers</option></select></div>
           <button class="button primary full" type="submit" ${busy ? "disabled" : ""}>${busy ? "Opening your table…" : "Create a game"}<span>→</span></button>
         </form>
         <form id="join-form" class="lobby-panel join-panel"><div class="panel-heading"><span class="panel-icon">→</span><div><h2>There’s a seat for you</h2><p>Got an invite? Come on in.</p></div><span class="step-number">02</span></div>
@@ -138,10 +139,10 @@ function renderTable() {
   const others = [1, 2, 3].map((n) => ((state.seat - 1 + n) % 4) + 1);
   app.innerHTML = `<div class="game-shell">
     <header class="site-header game-header">${brand()}<div class="room-badge"><span>TABLE CODE</span><button data-action="copy" title="Copy game code">${state.code}<span>▣</span></button></div><div class="header-actions"><span class="connection ${connected ? "" : "offline"}"><span class="status-dot"></span>${connected ? "Live table" : "Reconnecting…"}</span><button class="button ghost small" data-action="exit">Leave table <span>→</span></button></div></header>
-    <div class="table-toolbar"><div><span class="eyebrow">MAKE YOURSELF AT HOME</span><h1>Your table, your rules<span>.</span></h1><p>${state.kind === "rook" ? "Rook" : "Face cards"} <span>·</span> ${state.total} cards <span>·</span> ${state.players.filter((p) => p.occupied).length} of 4 seats ${host ? '<span class="host-pill">YOU’RE THE HOST</span>' : `<span>·</span> Hosted by Player ${state.host}`}</p></div><div class="table-controls">${host ? '<button class="button secondary small" data-action="shuffle">⇄ Shuffle</button><button class="button secondary small" data-action="deal">▤ Deal cards</button><button class="button primary small" data-action="create-pile">+ Add pile</button><button class="icon-button reset-button" data-action="return" title="Return all cards to Deck" aria-label="Return all cards to Deck">↶</button>' : '<span class="table-tip">Pick your cards. Make your move.</span>'}<button class="icon-button" data-action="help" aria-label="How to play">?</button></div></div>
+    <div class="table-toolbar"><div><span class="eyebrow">MAKE YOURSELF AT HOME</span><h1>Your table, your rules<span>.</span></h1><p>${state.kind === "500" ? "500 Deck" : state.kind === "rook" ? "Rook" : "Face cards"} <span>·</span> ${state.total} cards <span>·</span> ${state.players.filter((p) => p.occupied).length} of 4 seats ${host ? '<span class="host-pill">YOU’RE THE HOST</span>' : `<span>·</span> Hosted by Player ${state.host}`}</p></div><div class="table-controls">${host ? '<button class="button secondary small" data-action="shuffle">⇄ Shuffle</button><button class="button secondary small" data-action="deal">▤ Deal cards</button><button class="button primary small" data-action="create-pile">+ Add pile</button><button class="icon-button reset-button" data-action="return" title="Return all cards to Deck" aria-label="Return all cards to Deck">↶</button>' : '<span class="table-tip">Pick your cards. Make your move.</span>'}${host && state.kind === "500" ? '<button class="button secondary small" data-action="deal-500">Deal for 500</button>' : ""}<button class="icon-button" data-action="help" aria-label="How to play">?</button></div></div>
     <main class="table-layout">
       ${hand(others[1], "top")}${hand(others[0], "left")}
-      <section class="shared-table" aria-label="Shared card table"><div class="felt-label"><span>♣</span> THE CARD ROOM <span>♣</span></div><div class="pile-grid">${Array.from(
+      <section class="shared-table" aria-label="Shared card table"><div class="felt-label"><span>♣</span> CARD TABLE <span>♣</span></div><div class="pile-grid">${Array.from(
         { length: slots },
         (_, position) => {
           const c = shared.find((c) => c.position === position);
@@ -152,7 +153,7 @@ function renderTable() {
       )}</div><div class="table-hint">${host ? "⠿ Drag piles to arrange your table · Changes are shared with everyone" : "A shared table · Hands stay private"}</div></section>
       ${hand(others[2], "right")}${hand(state.seat, "bottom")}
     </main>
-    <footer class="game-footer"><span><span class="status-dot"></span> ${esc(state.events.at(-1))}</span><button class="text-button" data-action="activity">Table activity →</button></footer>
+    <footer class="game-footer"><span><span class="status-dot"></span> ${esc(state.events.at(-1))}</span>${host ? '<button class="text-button" data-action="activity">Table Activity →</button>' : ""}</footer>
     <div id="selection-bar"></div>
   </div>`;
   for (const el of app.querySelectorAll("[data-scroll]")) {
@@ -317,7 +318,7 @@ function modal(
   contents,
   { form, submit = "Save changes", danger = false, intro = "" } = {},
 ) {
-  dialog.innerHTML = `<div class="dialog-header"><span class="eyebrow">THE CARD ROOM</span><button class="icon-button" data-action="cancel" aria-label="Close dialog">×</button></div><h2 id="dialog-title">${esc(title)}</h2>${intro ? `<p class="dialog-intro">${esc(intro)}</p>` : ""}${form ? `<form id="${form}">` : '<div class="dialog-content">'}${contents}<div class="dialog-actions">${form ? `<button type="button" class="button ghost" data-action="cancel">Cancel</button><button class="button ${danger ? "danger" : "primary"}" type="submit">${esc(submit)}</button>` : '<button class="button primary" data-action="cancel">Got it</button>'}</div>${form ? "</form>" : "</div>"}`;
+  dialog.innerHTML = `<div class="dialog-header"><span class="eyebrow">CARD TABLE</span><button class="icon-button" data-action="cancel" aria-label="Close dialog">×</button></div><h2 id="dialog-title">${esc(title)}</h2>${intro ? `<p class="dialog-intro">${esc(intro)}</p>` : ""}${form ? `<form id="${form}">` : '<div class="dialog-content">'}${contents}<div class="dialog-actions">${form ? `<button type="button" class="button ghost" data-action="cancel">Cancel</button><button class="button ${danger ? "danger" : "primary"}" type="submit">${esc(submit)}</button>` : '<button class="button primary" data-action="cancel">Got it</button>'}</div>${form ? "</form>" : "</div>"}`;
   if (!dialog.open) dialog.showModal();
 }
 const seatOptions = (players, selectedSeat) =>
@@ -482,6 +483,9 @@ async function handleAction(event) {
     case "deal":
       openDeal();
       break;
+    case "deal-500":
+      if (state.host === state.seat) send({ type: "deal500" });
+      break;
     case "exit":
       openExit();
       break;
@@ -499,6 +503,7 @@ async function handleAction(event) {
       );
       break;
     case "activity":
+      if (state.host !== state.seat) return;
       modal(
         "Around the table",
         `<ol class="activity-list">${state.events.map((e) => `<li>${esc(e)}</li>`).join("")}</ol>`,
