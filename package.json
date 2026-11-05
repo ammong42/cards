@@ -1,0 +1,27 @@
+{
+  "name": "cards-together",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server/local.js",
+    "test": "node --test --test-isolation=none test/*.test.js",
+    "test:browser": "node test/browser.js",
+    "check": "node --check public/app.js && node --check server/game.js && node --check server/room.js && node --check server/worker.js && node --check server/local.js",
+    "build": "node scripts/cloudflare.js deploy --dry-run --outdir dist",
+    "dev:cloudflare": "node scripts/cloudflare.js dev",
+    "deploy": "node scripts/cloudflare.js deploy",
+    "cloudflare": "node scripts/cloudflare.js",
+    "format": "prettier --write public server scripts test package.json wrangler.jsonc README.md",
+    "format:check": "prettier --check public server scripts test package.json wrangler.jsonc README.md"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "prettier": "^3.9.10",
+    "wrangler": "^4.45.0",
+    "ws": "^8.18.3"
+  },
+  "engines": {
+    "node": ">=22.14"
+  }
+}
