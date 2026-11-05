@@ -6,6 +6,30 @@ const fail = (message) => {
 };
 const integer = (n, min, max) => Number.isInteger(n) && n >= min && n <= max;
 const unique = (xs) => new Set(xs).size === xs.length;
+const handSuits = [
+  "♣",
+  "♦",
+  "♥",
+  "♠",
+  "black",
+  "green",
+  "red",
+  "yellow",
+  "rook",
+  "joker",
+];
+const handValue = (card) =>
+  card.suit === "rook" || card.suit === "joker"
+    ? 15
+    : ({ J: 11, Q: 12, K: 13, A: 14 }[card.rank] ?? Number(card.rank));
+function compareHandCards(a, b, by) {
+  const number = handValue(a) - handValue(b);
+  const suit = handSuits.indexOf(a.suit) - handSuits.indexOf(b.suit);
+  return (
+    (by === "suit" ? suit || number : number || suit) ||
+    a.color.localeCompare(b.color)
+  );
+}
 export const randomInt = (max) => {
   const limit = 0x100000000 - (0x100000000 % max);
   const value = new Uint32Array(1);
@@ -218,6 +242,20 @@ export function act(state, token, action) {
   };
   const deck = collectionFor(state, "deck");
   switch (action.type) {
+    case "draw": {
+      if (!deck.cards.length) fail("The Deck is empty.");
+      collectionFor(state, `hand-${p.seat}`).cards.push(deck.cards.pop());
+      record(state, `Player ${p.seat} drew one card from the Deck.`);
+      break;
+    }
+    case "sortHand": {
+      if (!["number", "suit"].includes(action.by))
+        fail("Choose a valid hand sort order.");
+      collectionFor(state, `hand-${p.seat}`).cards.sort((a, b) =>
+        compareHandCards(a, b, action.by),
+      );
+      break;
+    }
     case "move": {
       const target = collectionFor(state, action.target);
       if (

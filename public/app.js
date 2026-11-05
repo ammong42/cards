@@ -107,6 +107,7 @@ function hand(seat, position) {
   const c = state.collections.find((c) => c.id === `hand-${seat}`);
   return `<section class="hand hand-${position} ${own ? "own-hand" : ""} ${p.occupied ? "" : "vacant"}" aria-label="Player ${seat} hand">
     <div class="hand-heading"><span class="avatar">${seat}</span><span><strong>Player ${seat}${own ? ' <span class="you-label">YOU</span>' : ""}${seat === state.host ? ' <span title="Host" aria-label="Host">♔</span>' : ""}</strong><small>${p.occupied ? (p.connected ? (own ? "Only you can see these cards" : "At the table") : "Reconnecting · seat reserved") : "Open seat"}</small></span><span class="count-tag" title="${c.cards.length} cards">${c.cards.length}</span></div>
+    ${own ? `<div class="hand-actions" role="group" aria-label="Your hand controls"><button class="button secondary small" data-action="draw" ${!connected || !state.collections.find((c) => c.id === "deck").cards.length ? "disabled" : ""} title="Draw the top card of the Deck into your hand">Draw one card</button><button class="button secondary small" data-action="sort-number" ${!connected || c.cards.length < 2 ? "disabled" : ""} title="Sort low to high, with Ace high and Rook birds or jokers last">Sort by number</button><button class="button secondary small" data-action="sort-suit" ${!connected || c.cards.length < 2 ? "disabled" : ""} title="Group suits or colors and sort low to high within each group">Sort by suit/color</button></div>` : ""}
     <div class="hand-cards" data-scroll="${c.id}">${own ? (c.cards.length ? c.cards.map((card) => cardFace(card, c)).join("") : '<div class="empty-hand">Your next good hand starts here.<span>Draw from the Deck or wait for a deal.</span></div>') : c.cards.length ? hiddenStack(c, !p.occupied) : '<span class="empty-seat">Pull up a chair</span>'}</div>
     ${!own && !p.occupied && c.cards.length ? `<button class="text-button" data-action="select-n" data-id="${c.id}">Select top cards</button>` : ""}
   </section>`;
@@ -420,6 +421,15 @@ async function handleAction(event) {
   if (!state) return;
   const c = state.collections.find((c) => c.id === id);
   switch (action) {
+    case "draw":
+      send({ type: "draw" });
+      break;
+    case "sort-number":
+      send({ type: "sortHand", by: "number" });
+      break;
+    case "sort-suit":
+      send({ type: "sortHand", by: "suit" });
+      break;
     case "card":
       selectCard(button.dataset.card, button.dataset.source);
       break;

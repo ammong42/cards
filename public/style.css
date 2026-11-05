@@ -817,6 +817,12 @@ select {
   color: #87957b;
   margin-left: auto;
 }
+.hand-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
 .hand-cards {
   display: flex;
   gap: 7px;

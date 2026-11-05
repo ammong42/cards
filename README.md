@@ -53,6 +53,8 @@ The Node server persists room state in ignored JSON files and needs no external 
 
 ## Playing
 
+- Your hand has **Draw one card**, **Sort by number**, and **Sort by suit/color** buttons, available to every player. Drawing takes the current top card of the Deck directly into your own private hand. It is disabled when the Deck is empty or you are reconnecting.
+- Number sorting is low to high: face cards use 2–10, J, Q, K, A (**Ace high**); Rook and 500 cards use their printed numbers. Suit/color sorting groups clubs, diamonds, hearts, spades for face cards, or black, green, red, yellow for Rook/500, then sorts by number within each group. Rook birds and jokers come last in either mode, with black jokers before red jokers. Sorting affects only your own hand and survives refresh. New cards are appended until you sort again.
 - Click a card to select/deselect it. Choose a destination in the selection bar and move the selection together.
 - Clicking a facedown stack selects its top card. **Select top N** selects several without revealing their values. Card counts are visible on both desktop and touch devices.
 - You can give cards to any hand. You can take cards from your own hand, shared piles, or a vacant seat's hand. An occupied or reconnecting player's hand stays protected.

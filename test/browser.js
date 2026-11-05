@@ -34,6 +34,46 @@ async function join(page, code) {
   await page.getByRole("button", { name: "Join a game", exact: false }).click();
   await ready(page);
 }
+async function checkHandSort(page, by) {
+  const cards = await page
+    .locator(".own-hand .playing-card")
+    .evaluateAll((elements) =>
+      elements.map((el) => ({
+        id: el.dataset.card,
+        rank: el.querySelector("b").textContent,
+        suit: el.querySelector("span").textContent,
+        color: el.dataset.color,
+      })),
+    );
+  const rank = (card) =>
+    ({ J: 11, Q: 12, K: 13, A: 14, R: 15, "★": 15 })[card.rank] ??
+    Number(card.rank);
+  const suit = (card) =>
+    ["♣", "♦", "♥", "♠", "black", "green", "red", "yellow", "♜", "★"].indexOf(
+      card.suit === "●" ? card.color : card.suit,
+    );
+  const expected = [...cards]
+    .sort((a, b) => {
+      const primary = by === "number" ? rank(a) - rank(b) : suit(a) - suit(b);
+      const secondary = by === "number" ? suit(a) - suit(b) : rank(a) - rank(b);
+      return primary || secondary || a.color.localeCompare(b.color);
+    })
+    .map((card) => card.id);
+  await page
+    .getByRole("button", {
+      name: by === "number" ? "Sort by number" : "Sort by suit/color",
+      exact: true,
+    })
+    .click();
+  await expect
+    .poll(() =>
+      page
+        .locator(".own-hand .playing-card")
+        .evaluateAll((elements) => elements.map((el) => el.dataset.card)),
+    )
+    .toEqual(expected);
+  return expected;
+}
 try {
   if (!external) {
     server = spawn(process.execPath, ["server/local.js"], {
@@ -87,6 +127,43 @@ try {
   await join(third, code);
   await join(fourth, code);
   await expect(host.locator(".table-toolbar p")).toContainText("4 of 4 seats");
+  for (const player of [host, guest, third, fourth]) {
+    await expect(player.locator(".own-hand .hand-actions button")).toHaveCount(
+      3,
+    );
+    await expect(
+      player.locator(".hand:not(.own-hand) .hand-actions"),
+    ).toHaveCount(0);
+    await expect(
+      player.getByRole("button", { name: "Sort by number", exact: true }),
+    ).toBeDisabled();
+    await expect(
+      player.getByRole("button", { name: "Sort by suit/color", exact: true }),
+    ).toBeDisabled();
+  }
+  // Host and guest can draw directly; each draw affects only its player's hand.
+  await host
+    .getByRole("button", { name: "Draw one card", exact: true })
+    .click();
+  await handCount(host, 1);
+  await handCount(guest, 0);
+  await expect(
+    host.getByRole("button", { name: "Sort by number", exact: true }),
+  ).toBeDisabled();
+  await guest
+    .getByRole("button", { name: "Draw one card", exact: true })
+    .click();
+  await handCount(guest, 1);
+  await handCount(host, 1);
+  await expect(guest.locator(".hand:not(.own-hand) .playing-card")).toHaveCount(
+    0,
+  );
+  await host
+    .getByRole("button", { name: "Return all cards to Deck", exact: true })
+    .click();
+  await host.locator('#return-form button[type="submit"]').click();
+  await handCount(host, 0);
+  await handCount(guest, 0);
   await expect(
     host.getByRole("button", { name: "Table Activity" }),
   ).toBeVisible();
@@ -113,6 +190,22 @@ try {
   await handCount(guest, 6);
   await handCount(third, 5);
   await handCount(fourth, 6);
+  const selectedId = await host
+    .locator(".own-hand .playing-card")
+    .first()
+    .getAttribute("data-card");
+  await host.locator(".own-hand .playing-card").first().click();
+  await checkHandSort(host, "number");
+  await expect(host.locator(`[data-card="${selectedId}"]`)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  const sortedHostIds = await checkHandSort(host, "suit");
+  await expect(host.locator(".selection-count")).toHaveText("1");
+  await host.getByRole("button", { name: "Clear selection" }).click();
+  await checkHandSort(guest, "number");
+  await checkHandSort(guest, "suit");
+  await handCount(guest, 6);
   assert.equal(
     await guest.locator(".hand:not(.own-hand) .playing-card").count(),
     0,
@@ -120,6 +213,12 @@ try {
   await host.reload();
   await ready(host);
   await handCount(host, 5);
+  assert.deepEqual(
+    await host
+      .locator(".own-hand .playing-card")
+      .evaluateAll((elements) => elements.map((el) => el.dataset.card)),
+    sortedHostIds,
+  );
   await host.getByRole("button", { name: "Add pile", exact: false }).click();
   await host.getByRole("button", { name: "Configure Pile 1" }).click();
   await host.locator("#pile-name").fill("The middle");
@@ -161,6 +260,7 @@ try {
   });
   // Mobile table and lobby do not overflow horizontally.
   await fourth.setViewportSize({ width: 390, height: 844 });
+  await checkHandSort(fourth, "suit");
   await fourth.screenshot({
     path: "test-results/table-mobile.png",
     fullPage: true,
@@ -230,6 +330,14 @@ try {
   await ready(mobile);
   await expect(mobile.locator(".table-toolbar p")).toContainText("57 cards");
   await expect(mobile.locator('[data-action="deal-500"]')).toHaveCount(0);
+  for (let count = 1; count <= 3; count++) {
+    await mobile
+      .getByRole("button", { name: "Draw one card", exact: true })
+      .click();
+    await handCount(mobile, count);
+  }
+  await checkHandSort(mobile, "number");
+  await checkHandSort(mobile, "suit");
   // The 500 shortcut requires four seats, preserves private hands, and reuses Middle.
   await host.getByRole("button", { name: /500 Deck/ }).click();
   await expect(host.locator(".joker-row")).toBeHidden();
@@ -269,7 +377,12 @@ try {
     await expect(
       player.locator('[data-pile="deck"] .empty-pile'),
     ).toBeVisible();
+    await expect(
+      player.getByRole("button", { name: "Draw one card", exact: true }),
+    ).toBeDisabled();
   }
+  await checkHandSort(host, "number");
+  await checkHandSort(guest, "suit");
   await host
     .getByRole("button", { name: "Return all cards to Deck", exact: true })
     .click();
@@ -307,7 +420,7 @@ try {
   );
   assert.deepEqual(errors, [], `Browser exceptions: ${errors.join(", ")}`);
   console.log(
-    "PASS: Card Table branding, three deck types, four-player join, capacity, extra-card deal, private hands, 500 deals and Middle reuse, host-only activity, refresh, piles, card moves, layout sync, mobile layouts, replacement seats, return, shuffle, host transfer, and closure.",
+    "PASS: Card Table branding, three deck types, four-player join, draw controls, hand sorting and refresh persistence, selection preservation, capacity, extra-card deal, private hands, 500 deals and Middle reuse, host-only activity, piles, card moves, layout sync, mobile layouts, replacement seats, return, shuffle, host transfer, and closure.",
   );
 } finally {
   await browser?.close();

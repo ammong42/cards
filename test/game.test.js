@@ -23,6 +23,182 @@ const ref = (state, id, n = 1) =>
     .find((c) => c.id === id)
     .cards.slice(-n)
     .map((c) => ({ id: c.id, source: id }));
+const handIn = (state, seat) =>
+  state.collections.find((c) => c.id === `hand-${seat}`);
+const labels = (cards) =>
+  cards.map((c) =>
+    c.suit === "joker" ? `${c.color} joker` : `${c.rank} ${c.suit}`,
+  );
+function giveCards(state, token, seat, faces) {
+  const deck = state.collections[0];
+  const cards = faces.map(([rank, suit, color]) => {
+    const card = deck.cards.find(
+      (c) =>
+        c.rank === rank && c.suit === suit && (!color || c.color === color),
+    );
+    assert.ok(card, `Missing test card ${rank} ${suit}`);
+    return { id: card.id, source: "deck" };
+  });
+  act(state, token, { type: "move", cards, target: `hand-${seat}` });
+}
+
+test("every player draws the current top card into only their own private hand for every deck", () => {
+  for (const kind of ["standard", "rook", "500"]) {
+    const { state, host, tokens } = setup(2, kind);
+    const top = state.collections[0].cards.at(-1);
+    const count = state.total;
+    act(state, tokens[1], { type: "draw", target: "hand-1", seat: 1 });
+    assert.deepEqual(handIn(state, 2).cards, [top]);
+    assert.equal(handIn(state, 1).cards.length, 0);
+    assert.equal(state.collections[0].cards.length, count - 1);
+    assert.equal(cardsIn(state).length, count);
+    assert.equal(new Set(cardsIn(state).map((c) => c.id)).size, count);
+    assert.equal(
+      viewFor(state, tokens[1]).collections.find((c) => c.id === "hand-2")
+        .cards[0].rank,
+      top.rank,
+    );
+    assert.deepEqual(
+      viewFor(state, host).collections.find((c) => c.id === "hand-2").cards[0],
+      { id: top.id },
+    );
+  }
+});
+test("empty-Deck and unauthorized draws fail without moving or losing cards", () => {
+  const { state, host } = setup();
+  let before = JSON.stringify(state);
+  assert.throws(() => act(state, "invalid-token", { type: "draw" }), /seat/);
+  assert.equal(JSON.stringify(state), before);
+  act(state, host, {
+    type: "move",
+    cards: ref(state, "deck", state.total),
+    target: "hand-1",
+  });
+  before = JSON.stringify(state);
+  assert.throws(() => act(state, host, { type: "draw" }), /Deck is empty/);
+  assert.equal(JSON.stringify(state), before);
+});
+test("face-card hands sort numerically with Ace high or by suit with numeric order inside each suit", () => {
+  const { state, host, tokens } = setup(2, "standard", 2);
+  giveCards(state, host, 2, [
+    ["A", "♠"],
+    ["10", "♥"],
+    ["2", "♠"],
+    ["K", "♣"],
+    ["J", "♦"],
+    ["2", "♣"],
+    ["Q", "♥"],
+    ["★", "joker", "red"],
+    ["★", "joker", "black"],
+    ["A", "♥"],
+  ]);
+  act(state, host, { type: "draw" });
+  const deckBefore = structuredClone(state.collections[0]);
+  const hostBefore = structuredClone(handIn(state, 1));
+  const originalIds = handIn(state, 2)
+    .cards.map((c) => c.id)
+    .sort();
+  act(state, tokens[1], {
+    type: "sortHand",
+    by: "number",
+    target: "hand-1",
+    seat: 1,
+  });
+  assert.deepEqual(labels(handIn(state, 2).cards), [
+    "2 ♣",
+    "2 ♠",
+    "10 ♥",
+    "J ♦",
+    "Q ♥",
+    "K ♣",
+    "A ♥",
+    "A ♠",
+    "black joker",
+    "red joker",
+  ]);
+  act(state, tokens[1], { type: "sortHand", by: "suit" });
+  assert.deepEqual(labels(handIn(state, 2).cards), [
+    "2 ♣",
+    "K ♣",
+    "J ♦",
+    "10 ♥",
+    "Q ♥",
+    "A ♥",
+    "2 ♠",
+    "A ♠",
+    "black joker",
+    "red joker",
+  ]);
+  assert.deepEqual(handIn(state, 1), hostBefore);
+  assert.deepEqual(state.collections[0], deckBefore);
+  assert.deepEqual(
+    handIn(state, 2)
+      .cards.map((c) => c.id)
+      .sort(),
+    originalIds,
+  );
+  assert.ok(
+    viewFor(state, host)
+      .collections.find((c) => c.id === "hand-2")
+      .cards.every((c) => !c.rank && !c.suit),
+  );
+});
+test("Rook and 500 sort printed numbers correctly within color groups, with the bird last", () => {
+  for (const kind of ["rook", "500"]) {
+    const { state, host } = setup(1, kind);
+    giveCards(state, host, 1, [
+      ["14", "yellow"],
+      ["4", "red"],
+      ["10", "black"],
+      ["R", "rook"],
+      ["5", "green"],
+      ["4", "black"],
+      ["14", "green"],
+    ]);
+    act(state, host, { type: "sortHand", by: "number" });
+    assert.deepEqual(labels(handIn(state, 1).cards), [
+      "4 black",
+      "4 red",
+      "5 green",
+      "10 black",
+      "14 green",
+      "14 yellow",
+      "R rook",
+    ]);
+    act(state, host, { type: "sortHand", by: "suit" });
+    assert.deepEqual(labels(handIn(state, 1).cards), [
+      "4 black",
+      "10 black",
+      "5 green",
+      "14 green",
+      "4 red",
+      "14 yellow",
+      "R rook",
+    ]);
+  }
+});
+test("empty and one-card hands sort safely, and invalid sorts and tokens leave the table unchanged", () => {
+  const { state, host } = setup();
+  for (const count of [0, 1]) {
+    if (count) act(state, host, { type: "draw" });
+    const before = JSON.stringify(state);
+    for (const by of ["number", "suit"])
+      act(state, host, { type: "sortHand", by });
+    assert.equal(JSON.stringify(state), before);
+    for (const by of [undefined, "descending", null, {}]) {
+      assert.throws(
+        () => act(state, host, { type: "sortHand", by }),
+        /sort order/,
+      );
+      assert.equal(JSON.stringify(state), before);
+    }
+    assert.throws(
+      () => act(state, "invalid-token", { type: "sortHand", by: "number" }),
+      /seat/,
+    );
+    assert.equal(JSON.stringify(state), before);
+  }
+});
 
 test("deck composition and unambiguous four-letter codes", () => {
   for (let jokers = 0; jokers <= 2; jokers++) {
@@ -397,6 +573,52 @@ const fakeSocket = () => {
     close() {},
   };
 };
+test("simultaneous draws take distinct top cards and the last card can only be drawn once", async () => {
+  for (const remaining of [1, 2]) {
+    let stored;
+    const room = new Room({
+      save: async (s) => {
+        stored = structuredClone(s);
+      },
+      alarm: async () => {},
+    });
+    const host = await room.initialize("ABCD", { kind: "standard" });
+    const guest = await room.join();
+    const a = fakeSocket(),
+      b = fakeSocket();
+    await room.connect(a);
+    await room.connect(b);
+    await room.message(a, JSON.stringify({ type: "auth", token: host.token }));
+    await room.message(b, JSON.stringify({ type: "auth", token: guest.token }));
+    await room.message(a, JSON.stringify({ type: "createPile" }));
+    await room.message(
+      a,
+      JSON.stringify({
+        type: "move",
+        cards: ref(room.state, "deck", 52 - remaining),
+        target: "pile-1",
+      }),
+    );
+    const before = [...room.state.collections[0].cards];
+    await Promise.all([
+      room.message(a, JSON.stringify({ type: "draw" })),
+      room.message(b, JSON.stringify({ type: "draw" })),
+    ]);
+    assert.equal(room.state.collections[0].cards.length, 0);
+    assert.equal(handIn(room.state, 1).cards[0].id, before.at(-1).id);
+    assert.equal(handIn(room.state, 2).cards.length, remaining - 1);
+    if (remaining === 1)
+      assert.ok(
+        b.messages.some(
+          (m) => m.type === "error" && /Deck is empty/.test(m.message),
+        ),
+      );
+    else assert.equal(handIn(room.state, 2).cards[0].id, before.at(-2).id);
+    assert.equal(cardsIn(room.state).length, 52);
+    assert.equal(new Set(cardsIn(room.state).map((c) => c.id)).size, 52);
+    assert.equal(stored.collections[0].cards.length, 0);
+  }
+});
 test("coordinator serializes concurrent moves and reauthenticates a refresh without losing its seat", async () => {
   let stored;
   const room = new Room({
