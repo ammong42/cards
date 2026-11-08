@@ -17,6 +17,7 @@ let state = null,
   reconnectAttempt = 0,
   toastTimer;
 let destination = "";
+let handDrag = null;
 let selected = new Map(),
   chosenDeck = "standard",
   busy = false;
@@ -44,6 +45,7 @@ function brand() {
   return '<a class="brand" href="/" data-action="home"><span class="brand-mark">♣</span><span>Card Table<span class="brand-dot">.</span></span></a>';
 }
 function renderHome() {
+  cancelHandDrag();
   app.innerHTML = `
     <header class="site-header">${brand()}<span class="header-note"><span class="status-dot"></span> Good company. Great cards.</span></header>
     <main class="home">
@@ -99,7 +101,10 @@ function cardFace(card, collection, small = false) {
         : ["red", "green", "yellow", "black"].includes(card.suit)
           ? "●"
           : card.suit;
-  return `<button class="playing-card ${small ? "compact" : ""} ${selected.has(card.id) ? "selected" : ""}" data-color="${esc(card.color)}" data-action="card" data-card="${esc(card.id)}" data-source="${collection.id}" aria-label="${esc(cardLabel(card))}" aria-pressed="${selected.has(card.id)}"><b>${esc(card.rank)}</b><span>${symbol}</span><small>${esc(card.rank)}</small></button>`;
+  const face = `<button class="playing-card ${small ? "compact" : ""} ${selected.has(card.id) ? "selected" : ""}" data-color="${esc(card.color)}" data-action="card" data-card="${esc(card.id)}" data-source="${collection.id}" aria-label="${esc(cardLabel(card))}" aria-pressed="${selected.has(card.id)}"><b>${esc(card.rank)}</b><span>${symbol}</span><small>${esc(card.rank)}</small></button>`;
+  if (collection.type !== "hand" || collection.seat !== state.seat) return face;
+  const showHandle = selected.size === 1 && selected.has(card.id);
+  return `<div class="hand-card" data-hand-card="${card.id}">${face}${showHandle ? `<button class="card-drag-handle" type="button" data-action="reorder-card" data-reorder-card="${card.id}" aria-label="Rearrange ${esc(cardLabel(card))}" aria-keyshortcuts="ArrowLeft ArrowRight Home End" title="Drag to rearrange your hand, or use Left/Right, Home/End" ${connected ? "" : "disabled"}>⠿</button>` : ""}</div>`;
 }
 function hand(seat, position) {
   const p = state.players[seat - 1],
@@ -127,6 +132,9 @@ function pile(c) {
   </section>`;
 }
 function renderTable() {
+  const focusedCard = app.querySelector(".card-drag-handle:focus")?.dataset
+    .reorderCard;
+  cancelHandDrag();
   const scroll = new Map(
     [...app.querySelectorAll("[data-scroll]")].map((el) => [
       el.dataset.scroll,
@@ -165,6 +173,13 @@ function renderTable() {
     }
   }
   updateSelection();
+  if (focusedCard) {
+    const handle = app.querySelector(`[data-reorder-card="${focusedCard}"]`);
+    handle?.focus({ preventScroll: true });
+    handle
+      ?.closest(".hand-card")
+      .scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
 }
 function render() {
   if (state) renderTable();
@@ -421,6 +436,9 @@ async function handleAction(event) {
   if (!state) return;
   const c = state.collections.find((c) => c.id === id);
   switch (action) {
+    case "reorder-card":
+      // The handle must not toggle the card's selection when clicked after dragging.
+      break;
     case "draw":
       send({ type: "draw" });
       break;
@@ -599,6 +617,150 @@ app.addEventListener("input", (event) => {
     event.target.value = event.target.value
       .toUpperCase()
       .replace(/[^A-Z]/g, "");
+});
+
+// Pointer capture supports mouse, pen, and touch without changing pile dragging.
+function cancelHandDrag() {
+  const drag = handDrag;
+  if (!drag) return;
+  handDrag = null;
+  cancelAnimationFrame(drag.frame);
+  drag.marker.remove();
+  drag.wrapper.classList.remove("is-reordering");
+  try {
+    drag.handle.releasePointerCapture(drag.pointerId);
+  } catch {}
+}
+function updateHandDrag() {
+  const drag = handDrag;
+  if (!drag) return;
+  if (drag.moved) {
+    const bounds = drag.hand.getBoundingClientRect();
+    drag.valid =
+      drag.x >= bounds.left &&
+      drag.x <= bounds.right &&
+      drag.y >= bounds.top - 12 &&
+      drag.y <= bounds.bottom + 12;
+    drag.marker.hidden = !drag.valid;
+    if (drag.valid) {
+      // Keep scrolling while the pointer is held near the edge of a long hand.
+      if (drag.x < bounds.left + 24) drag.hand.scrollLeft -= 8;
+      if (drag.x > bounds.right - 24) drag.hand.scrollLeft += 8;
+      const others = [...drag.hand.querySelectorAll("[data-hand-card]")].filter(
+        (el) => el.dataset.handCard !== drag.id,
+      );
+      const next = others.find((el) => {
+        const r = el.getBoundingClientRect();
+        return drag.x < r.left + r.width / 2;
+      });
+      drag.before = next?.dataset.handCard ?? null;
+      const edge = next
+        ? next.getBoundingClientRect().left - 4
+        : others.length
+          ? others.at(-1).getBoundingClientRect().right + 4
+          : bounds.left;
+      drag.marker.style.left = `${Math.max(0, (edge ?? bounds.left) - bounds.left + drag.hand.scrollLeft)}px`;
+    }
+  }
+  drag.frame = requestAnimationFrame(updateHandDrag);
+}
+app.addEventListener("pointerdown", (event) => {
+  const handle = event.target.closest(".card-drag-handle");
+  if (
+    !handle ||
+    handle.disabled ||
+    event.button !== 0 ||
+    selected.size !== 1 ||
+    !selected.has(handle.dataset.reorderCard)
+  )
+    return;
+  event.preventDefault();
+  cancelHandDrag();
+  const hand = handle.closest(".hand-cards");
+  const marker = document.createElement("div");
+  marker.className = "hand-drop-marker";
+  marker.setAttribute("aria-hidden", "true");
+  marker.hidden = true;
+  hand.append(marker);
+  const wrapper = handle.closest(".hand-card");
+  handDrag = {
+    id: handle.dataset.reorderCard,
+    pointerId: event.pointerId,
+    handle,
+    wrapper,
+    hand,
+    marker,
+    x: event.clientX,
+    y: event.clientY,
+    startX: event.clientX,
+    startY: event.clientY,
+    moved: false,
+    valid: false,
+    before: null,
+  };
+  wrapper.classList.add("is-reordering");
+  handle.setPointerCapture(event.pointerId);
+  handDrag.frame = requestAnimationFrame(updateHandDrag);
+});
+app.addEventListener("pointermove", (event) => {
+  if (!handDrag || handDrag.pointerId !== event.pointerId) return;
+  handDrag.x = event.clientX;
+  handDrag.y = event.clientY;
+  if (
+    Math.hypot(
+      event.clientX - handDrag.startX,
+      event.clientY - handDrag.startY,
+    ) >= 4
+  )
+    handDrag.moved = true;
+});
+app.addEventListener("pointerup", (event) => {
+  const drag = handDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  // Use the final pointer position even if it changed since the last animation frame.
+  drag.x = event.clientX;
+  drag.y = event.clientY;
+  cancelAnimationFrame(drag.frame);
+  updateHandDrag();
+  const { id, before, moved, valid } = drag;
+  cancelHandDrag();
+  if (moved && valid) send({ type: "reorderHand", id, before });
+});
+for (const eventName of ["pointercancel", "lostpointercapture"])
+  app.addEventListener(eventName, (event) => {
+    if (handDrag?.pointerId === event.pointerId) cancelHandDrag();
+  });
+app.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") cancelHandDrag();
+  const handle = event.target.closest(".card-drag-handle");
+  if (
+    !handle ||
+    handle.disabled ||
+    !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+  )
+    return;
+  event.preventDefault();
+  const hand = state.collections.find((c) => c.id === `hand-${state.seat}`);
+  const index = hand.cards.findIndex(
+    (c) => c.id === handle.dataset.reorderCard,
+  );
+  if (index === -1) return;
+  if ((event.key === "ArrowLeft" || event.key === "Home") && index === 0)
+    return;
+  if (
+    (event.key === "ArrowRight" || event.key === "End") &&
+    index === hand.cards.length - 1
+  )
+    return;
+  const before =
+    event.key === "Home"
+      ? hand.cards[0].id
+      : event.key === "ArrowLeft"
+        ? hand.cards[index - 1].id
+        : event.key === "ArrowRight"
+          ? (hand.cards[index + 2]?.id ?? null)
+          : null;
+  send({ type: "reorderHand", id: handle.dataset.reorderCard, before });
 });
 let dragged = null;
 app.addEventListener("dragstart", (event) => {

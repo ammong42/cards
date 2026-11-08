@@ -42,6 +42,109 @@ function giveCards(state, token, seat, faces) {
   act(state, token, { type: "move", cards, target: `hand-${seat}` });
 }
 
+test("players reorder one card before, between, or after their own cards without changing any other collection", () => {
+  for (const kind of ["standard", "rook", "500"]) {
+    const { state, host, tokens } = setup(2, kind);
+    act(state, host, { type: "deal", count: 5, start: 1, extras: [] });
+    const hand = handIn(state, 2);
+    const [a, b, c, d, e] = hand.cards.map((card) => card.id);
+    const otherCollections = structuredClone(
+      state.collections.filter((c) => c !== hand),
+    );
+    const original = structuredClone(hand.cards).sort((a, b) =>
+      a.id.localeCompare(b.id),
+    );
+    const events = [...state.events];
+    const ids = () => hand.cards.map((card) => card.id);
+    act(state, tokens[1], {
+      type: "reorderHand",
+      id: e,
+      before: a,
+      target: "hand-1",
+    });
+    assert.deepEqual(ids(), [e, a, b, c, d]);
+    act(state, tokens[1], { type: "reorderHand", id: e, before: c });
+    assert.deepEqual(ids(), [a, b, e, c, d]);
+    act(state, tokens[1], { type: "reorderHand", id: a, before: null });
+    assert.deepEqual(ids(), [b, e, c, d, a]);
+    act(state, tokens[1], { type: "reorderHand", id: d, before: e });
+    assert.deepEqual(ids(), [b, d, e, c, a]);
+    act(state, tokens[1], { type: "reorderHand", id: d, before: d });
+    assert.deepEqual(ids(), [b, d, e, c, a]);
+    assert.deepEqual(
+      state.collections.filter((c) => c !== hand),
+      otherCollections,
+    );
+    assert.deepEqual(
+      [...hand.cards].sort((a, b) => a.id.localeCompare(b.id)),
+      original,
+    );
+    assert.deepEqual(state.events, events);
+    assert.ok(
+      viewFor(state, host)
+        .collections.find((c) => c.id === hand.id)
+        .cards.every((card) => !card.rank && !card.suit && !card.color),
+    );
+  }
+});
+test("reordering rejects cards and destinations outside the actor's hand and invalid tokens atomically", () => {
+  const { state, host, tokens } = setup();
+  act(state, host, { type: "deal", count: 3, start: 1, extras: [] });
+  const ownId = handIn(state, 2).cards[0].id;
+  const foreignId = handIn(state, 1).cards[0].id;
+  const before = JSON.stringify(state);
+  for (const action of [
+    { id: foreignId, before: null },
+    { id: ownId, before: foreignId },
+    { id: state.collections[0].cards[0].id, before: null },
+    { id: ownId, before: state.collections[0].cards[0].id },
+    { id: "missing", before: null },
+    { id: ownId },
+    { id: ownId, before: "missing" },
+    { id: ownId, before: 0 },
+  ]) {
+    assert.throws(() =>
+      act(state, tokens[1], { type: "reorderHand", ...action }),
+    );
+    assert.equal(JSON.stringify(state), before);
+  }
+  assert.throws(
+    () =>
+      act(state, "invalid-token", {
+        type: "reorderHand",
+        id: ownId,
+        before: null,
+      }),
+    /seat/,
+  );
+  assert.equal(JSON.stringify(state), before);
+});
+test("reordering rejects stale drag anchors without losing cards and handles a one-card hand", () => {
+  const { state, host } = setup();
+  act(state, host, { type: "draw" });
+  const id = handIn(state, 1).cards[0].id;
+  const single = JSON.stringify(state);
+  act(state, host, { type: "reorderHand", id, before: null });
+  assert.equal(JSON.stringify(state), single);
+  act(state, host, { type: "draw" });
+  const anchor = handIn(state, 1).cards[1].id;
+  act(state, host, {
+    type: "move",
+    cards: [{ id: anchor, source: "hand-1" }],
+    target: "deck",
+  });
+  const before = JSON.stringify(state);
+  assert.throws(
+    () => act(state, host, { type: "reorderHand", id, before: anchor }),
+    /destination card/,
+  );
+  assert.throws(
+    () => act(state, host, { type: "reorderHand", id: anchor, before: null }),
+    /no longer/,
+  );
+  assert.equal(JSON.stringify(state), before);
+});
+
 test("every player draws the current top card into only their own private hand for every deck", () => {
   for (const kind of ["standard", "rook", "500"]) {
     const { state, host, tokens } = setup(2, kind);
@@ -573,6 +676,64 @@ const fakeSocket = () => {
     close() {},
   };
 };
+test("reordered hands are saved and restored privately even when another player acts at the same time", async () => {
+  let stored;
+  const room = new Room({
+    save: async (state) => {
+      stored = structuredClone(state);
+    },
+    alarm: async () => {},
+  });
+  const host = await room.initialize("ABCD", { kind: "standard" });
+  const guest = await room.join();
+  const a = fakeSocket(),
+    b = fakeSocket();
+  await room.connect(a);
+  await room.connect(b);
+  await room.message(a, JSON.stringify({ type: "auth", token: host.token }));
+  await room.message(b, JSON.stringify({ type: "auth", token: guest.token }));
+  await room.message(
+    a,
+    JSON.stringify({
+      type: "move",
+      cards: ref(room.state, "deck", 3),
+      target: "hand-2",
+    }),
+  );
+  const [first, second, third] = handIn(room.state, 2).cards;
+  await Promise.all([
+    room.message(a, JSON.stringify({ type: "draw" })),
+    room.message(
+      b,
+      JSON.stringify({ type: "reorderHand", id: first.id, before: null }),
+    ),
+  ]);
+  const expected = [second, third, first];
+  assert.deepEqual(handIn(stored, 2).cards, expected);
+  assert.equal(handIn(stored, 1).cards.length, 1);
+  const restored = new Room({
+    state: stored,
+    save: async () => {},
+    alarm: async () => {},
+  });
+  const reconnected = fakeSocket();
+  await restored.connect(reconnected);
+  await restored.message(
+    reconnected,
+    JSON.stringify({ type: "auth", token: guest.token }),
+  );
+  assert.deepEqual(
+    reconnected.messages.at(-1).state.collections.find((c) => c.id === "hand-2")
+      .cards,
+    expected,
+  );
+  assert.ok(
+    a.messages
+      .at(-1)
+      .state.collections.find((c) => c.id === "hand-2")
+      .cards.every((card) => !card.rank && !card.suit),
+  );
+});
 test("simultaneous draws take distinct top cards and the last card can only be drawn once", async () => {
   for (const remaining of [1, 2]) {
     let stored;

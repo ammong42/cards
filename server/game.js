@@ -256,6 +256,25 @@ export function act(state, token, action) {
       );
       break;
     }
+    case "reorderHand": {
+      const hand = collectionFor(state, `hand-${p.seat}`);
+      const from = hand.cards.findIndex((c) => c.id === action.id);
+      if (from === -1)
+        fail("That card is no longer in your hand. Please select again.");
+      if (
+        action.before !== null &&
+        !hand.cards.some((c) => c.id === action.before)
+      )
+        fail("The destination card has moved. Please try again.");
+      if (action.before === action.id) break;
+      const [card] = hand.cards.splice(from, 1);
+      const to =
+        action.before === null
+          ? hand.cards.length
+          : hand.cards.findIndex((c) => c.id === action.before);
+      hand.cards.splice(to, 0, card);
+      break;
+    }
     case "move": {
       const target = collectionFor(state, action.target);
       if (

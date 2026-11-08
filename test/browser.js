@@ -74,6 +74,155 @@ async function checkHandSort(page, by) {
     .toEqual(expected);
   return expected;
 }
+const handIds = (page) =>
+  page
+    .locator(".own-hand .playing-card")
+    .evaluateAll((elements) => elements.map((el) => el.dataset.card));
+async function expectHandIds(page, ids) {
+  await expect.poll(() => handIds(page)).toEqual(ids);
+}
+async function dragHandCard(
+  page,
+  before,
+  { cancel = false, outside = false } = {},
+) {
+  const handle = page.locator(".card-drag-handle");
+  await handle.scrollIntoViewIfNeeded();
+  const start = await handle.boundingBox();
+  const last = page.locator(".own-hand .hand-card").last();
+  const target = await (
+    before ? page.locator(`[data-hand-card="${before}"]`) : last
+  ).boundingBox();
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    before ? target.x + 2 : target.x + target.width - 2,
+    outside ? target.y - 100 : target.y + target.height / 2,
+    { steps: 8 },
+  );
+  if (cancel) await page.keyboard.press("Escape");
+  await page.mouse.up();
+}
+async function checkHandRearrange(page) {
+  const original = await handIds(page);
+  const selected = original[1];
+  await expect(page.locator(".card-drag-handle")).toHaveCount(0);
+  await page.locator(`[data-card="${selected}"]`).click();
+  await expect(page.locator(".card-drag-handle")).toHaveCount(1);
+  await expect(page.locator(".card-drag-handle")).toHaveText("⠿");
+  await page.locator(`[data-card="${original[2]}"]`).click();
+  await expect(page.locator(".card-drag-handle")).toHaveCount(0);
+  await page.locator(`[data-card="${original[2]}"]`).click();
+  const deckTop = page.locator('[data-pile="deck"] [data-action="top"]');
+  await deckTop.click();
+  await expect(page.locator(".card-drag-handle")).toHaveCount(0);
+  await deckTop.click();
+  await expect(page.locator(".card-drag-handle")).toHaveCount(1);
+  await dragHandCard(page, original[0]);
+  await expectHandIds(page, [
+    selected,
+    ...original.filter((id) => id !== selected),
+  ]);
+  const rest = original.filter((id) => id !== selected);
+  await dragHandCard(page, rest.at(-1));
+  await expectHandIds(page, [...rest.slice(0, -1), selected, rest.at(-1)]);
+  await dragHandCard(page, null);
+  const atEnd = [...rest, selected];
+  await expectHandIds(page, atEnd);
+  await expect(page.locator(`[data-card="${selected}"]`)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await dragHandCard(page, rest[0], { outside: true });
+  await expectHandIds(page, atEnd);
+  await dragHandCard(page, rest[0], { cancel: true });
+  await expectHandIds(page, atEnd);
+  await expect(page.locator(".hand-drop-marker")).toHaveCount(0);
+  // Keyboard rearrangement keeps the handle focused across state broadcasts.
+  await page.locator(".card-drag-handle").focus();
+  await page.keyboard.press("Home");
+  await expectHandIds(page, [selected, ...rest]);
+  await expect(page.locator(".card-drag-handle")).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expectHandIds(page, original);
+  await page.keyboard.press("End");
+  await expectHandIds(page, atEnd);
+  await page.keyboard.press("ArrowLeft");
+  const final = [...rest.slice(0, -1), selected, rest.at(-1)];
+  await expectHandIds(page, final);
+  await page.reload();
+  await ready(page);
+  await expectHandIds(page, final);
+  await expect(
+    page.locator(".hand:not(.own-hand) .card-drag-handle"),
+  ).toHaveCount(0);
+}
+async function checkTouchRearrange(page) {
+  const original = await handIds(page);
+  const selected = original[2];
+  await page.locator(`[data-card="${selected}"]`).click();
+  const client = await page.context().newCDPSession(page);
+  await client.send("Emulation.setTouchEmulationEnabled", {
+    enabled: true,
+    maxTouchPoints: 1,
+  });
+  async function touchDrag(before) {
+    const handle = page.locator(".card-drag-handle");
+    await handle.scrollIntoViewIfNeeded();
+    const start = await handle.boundingBox();
+    const hand = await page.locator(".own-hand .hand-cards").boundingBox();
+    const target = before
+      ? await page.locator(`[data-hand-card="${before}"]`).boundingBox()
+      : null;
+    const sendTouch = (type, x, y) =>
+      client.send("Input.dispatchTouchEvent", {
+        type,
+        touchPoints:
+          type === "touchEnd"
+            ? []
+            : [{ x, y, id: 1, radiusX: 1, radiusY: 1, force: 1 }],
+      });
+    await sendTouch(
+      "touchStart",
+      start.x + start.width / 2,
+      start.y + start.height / 2,
+    );
+    await sendTouch(
+      "touchMove",
+      target ? target.x + 2 : hand.x + hand.width - 4,
+      hand.y + hand.height / 2,
+    );
+    if (!before)
+      await expect
+        .poll(() =>
+          page
+            .locator(".own-hand .hand-cards")
+            .evaluate(
+              (el) => el.scrollLeft >= el.scrollWidth - el.clientWidth - 1,
+            ),
+        )
+        .toBe(true);
+    await sendTouch("touchEnd");
+  }
+  try {
+    await touchDrag(original[0]);
+    const rest = original.filter((id) => id !== selected);
+    await expectHandIds(page, [selected, ...rest]);
+    await touchDrag(original[3]);
+    await expectHandIds(page, [
+      ...rest.slice(0, 2),
+      selected,
+      ...rest.slice(2),
+    ]);
+    await touchDrag(null);
+    await expectHandIds(page, [...rest, selected]);
+    await expect(page.locator(".hand-drop-marker")).toHaveCount(0);
+    await page.getByRole("button", { name: "Clear selection" }).click();
+  } finally {
+    await client.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await client.detach();
+  }
+}
 try {
   if (!external) {
     server = spawn(process.execPath, ["server/local.js"], {
@@ -190,6 +339,8 @@ try {
   await handCount(guest, 6);
   await handCount(third, 5);
   await handCount(fourth, 6);
+  await checkHandRearrange(host);
+  await checkHandRearrange(guest);
   const selectedId = await host
     .locator(".own-hand .playing-card")
     .first()
@@ -408,6 +559,7 @@ try {
     fullPage: true,
   });
   await host.setViewportSize({ width: 390, height: 844 });
+  await checkTouchRearrange(host);
   await host.screenshot({
     path: "test-results/500-mobile.png",
     fullPage: true,
@@ -420,7 +572,7 @@ try {
   );
   assert.deepEqual(errors, [], `Browser exceptions: ${errors.join(", ")}`);
   console.log(
-    "PASS: Card Table branding, three deck types, four-player join, draw controls, hand sorting and refresh persistence, selection preservation, capacity, extra-card deal, private hands, 500 deals and Middle reuse, host-only activity, piles, card moves, layout sync, mobile layouts, replacement seats, return, shuffle, host transfer, and closure.",
+    "PASS: Card Table branding, three deck types, four-player join, draw controls, hand sorting and manual rearrangement, single-selection handles, mouse/touch/keyboard drops, long-hand scrolling, cancellation and refresh persistence, selection preservation, capacity, extra-card deal, private hands, 500 deals and Middle reuse, host-only activity, piles, card moves, layout sync, mobile layouts, replacement seats, return, shuffle, host transfer, and closure.",
   );
 } finally {
   await browser?.close();

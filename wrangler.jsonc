@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "cards-together",
+  "name": "cardtable",
+  "workers_dev": true,
   "main": "server/worker.js",
   "compatibility_date": "2026-01-01",
   "assets": {

@@ -824,6 +824,7 @@ select {
   margin-top: 12px;
 }
 .hand-cards {
+  position: relative;
   display: flex;
   gap: 7px;
   padding: 15px 0 2px;
@@ -831,6 +832,53 @@ select {
   max-height: 137px;
   min-height: 60px;
   align-items: center;
+}
+.hand-card {
+  position: relative;
+  flex: 0 0 60px;
+  height: 86px;
+}
+.hand-card:has(.playing-card.selected) {
+  transform: translateY(-4px);
+}
+.hand-card .playing-card.selected,
+.hand-card .playing-card:hover {
+  transform: none;
+}
+.card-drag-handle {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--green);
+  background: #edf2e7;
+  border: 1px solid #cbd5c0;
+  border-radius: 4px;
+  font-size: 18px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  z-index: 2;
+}
+.hand-card.is-reordering {
+  opacity: 0.6;
+}
+.is-reordering .card-drag-handle {
+  cursor: grabbing;
+}
+.hand-drop-marker {
+  position: absolute;
+  top: 10px;
+  width: 3px;
+  height: 91px;
+  background: #bd8a39;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 3;
 }
 .hand:not(.own-hand) .hand-cards {
   justify-content: center;

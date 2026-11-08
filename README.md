@@ -55,6 +55,7 @@ The Node server persists room state in ignored JSON files and needs no external 
 
 - Your hand has **Draw one card**, **Sort by number**, and **Sort by suit/color** buttons, available to every player. Drawing takes the current top card of the Deck directly into your own private hand. It is disabled when the Deck is empty or you are reconnecting.
 - Number sorting is low to high: face cards use 2–10, J, Q, K, A (**Ace high**); Rook and 500 cards use their printed numbers. Suit/color sorting groups clubs, diamonds, hearts, spades for face cards, or black, green, red, yellow for Rook/500, then sorts by number within each group. Rook birds and jokers come last in either mode, with black jokers before red jokers. Sorting affects only your own hand and survives refresh. New cards are appended until you sort again.
+- To rearrange your hand manually, select exactly one card. A **six-dot handle (⠿)** appears in that card's top-right corner. Drag the handle to an insertion line between cards, before the first, or after the last. Dragging near an edge scrolls a long hand. Mouse, pen, and touch are supported. With the handle focused, Left/Right moves the card one place and Home/End moves it to either end. The handle disappears when multiple cards are selected. Dropping outside your hand or pressing Escape cancels the drag. Your hand order stays private and survives refresh.
 - Click a card to select/deselect it. Choose a destination in the selection bar and move the selection together.
 - Clicking a facedown stack selects its top card. **Select top N** selects several without revealing their values. Card counts are visible on both desktop and touch devices.
 - You can give cards to any hand. You can take cards from your own hand, shared piles, or a vacant seat's hand. An occupied or reconnecting player's hand stays protected.
@@ -133,6 +134,10 @@ The browser suite covers all three deck types, four seats, full-table rejection,
 
 ## Free-tier deployment on Cloudflare
 
+The Worker is named **`cardtable`** in `wrangler.jsonc`. When deployed in the Cloudflare account with the **`ammong42`** workers.dev subdomain, its public URL is **`https://cardtable.ammong42.workers.dev`**. Run the deployment command below for this configuration change to take effect; a build alone does not publish it.
+
+If you previously deployed `cards-together`, deploying `cardtable` creates a separate Worker and room storage. Existing games and browser reconnect tokens do not move to the new address. Finish those games at the old address and create new games at the new one. You can disable the old Worker in Cloudflare after verifying the new site; deployment does not automatically delete it.
+
 The frontend and API are served by **one Cloudflare Worker with Static Assets**. A SQLite-backed **Durable Object per room** coordinates WebSockets and persists state. A second namespace rate-limits join/create/socket attempts. No separate Pages project, database service, or paid add-on is required.
 
 This architecture supports Cloudflare's Workers Free plan with SQLite Durable Objects, subject to the plan's current request, storage, and compute quotas. Free service is not unlimited; check the current [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) and [Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/) before publishing. Billing is controlled in your Cloudflare account.
@@ -151,7 +156,7 @@ npm.cmd run cloudflare -- login
 npm.cmd run deploy
 ```
 
-`wrangler.jsonc` declares both SQLite namespaces and their initial migration. Change its Worker name if needed. These scripts keep Wrangler configuration in `.local/cloudflare-config` unless `XDG_CONFIG_HOME` is explicitly set, and logs in `.local/wrangler-logs`, so they work in restricted cloud workspaces. Use the `cloudflare` script for login as well as deployment to keep the authentication location consistent. Never commit credentials or `.local/`.
+`wrangler.jsonc` declares both SQLite namespaces and their initial migration, with workers.dev publishing enabled. These scripts keep Wrangler configuration in `.local/cloudflare-config` unless `XDG_CONFIG_HOME` is explicitly set, and logs in `.local/wrangler-logs`, so they work in restricted cloud workspaces. Use the `cloudflare` script for login as well as deployment to keep the authentication location consistent. Never commit credentials or `.local/`.
 
 Deployment is not performed by the build or tests. No Cloudflare account is required for local development.
 
